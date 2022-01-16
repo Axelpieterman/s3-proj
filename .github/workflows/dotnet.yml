@@ -24,89 +24,88 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      -
-        name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
-      -
-        name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-      -
-        name: Login to DockerHub
-        uses: docker/login-action@v1 
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-      -
-        name: Build and push
-        id: docker_build
-        uses: docker/build-push-action@v2
-        with:
-          push: true
-          tags: Axelpieterman/s3-proj:latest
-  Mssql:
-    name: Build MSSQL server
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Start Docker for MSSSql
-      run: docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=Gunnoe123' -e 'MSSQL_PID=Developer' -p 1450:1433 --name msssql -d mcr.microsoft.com/mssql/server:2019-latest
-    - name: Dump mssql docker logs after tests
-      run: docker logs msssql
-    - name: install ef tool
-      run: dotnet tool install --global dotnet-ef
-
-
-
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v1
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+    - name: Login to DockerHub
+      uses: docker/login-action@v1 
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    - name: Build and push
+      id: docker_build
+      uses: docker/build-push-action@v2
+      with:
+        push: true
+        tags: ${{ secrets.DOCKER_USERNAME }}/s3-proj:latest
+  
   SonarCloud:
+    needs: build
     name: SonarCloud
     runs-on: windows-latest
     steps:
-      - name: Set up JDK 11
-        uses: actions/setup-java@v1
-        with:
-          java-version: 1.11
-      - uses: actions/checkout@v2
-        with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-      - name: Cache SonarCloud packages
-        uses: actions/cache@v1
-        with:
-          path: ~\sonar\cache
-          key: ${{ runner.os }}-sonar
-          restore-keys: ${{ runner.os }}-sonar
-      - name: Cache SonarCloud scanner
-        id: cache-sonar-scanner
-        uses: actions/cache@v1
-        with:
-          path: .\.sonar\scanner
-          key: ${{ runner.os }}-sonar-scanner
-          restore-keys: ${{ runner.os }}-sonar-scanner
-      - name: Install SonarCloud scanner
-        if: steps.cache-sonar-scanner.outputs.cache-hit != 'true'
-        shell: powershell
-        run: |
-          New-Item -Path .\.sonar\scanner -ItemType Directory
-          dotnet tool update dotnet-sonarscanner --tool-path .\.sonar\scanner
-      - name: Build and analyze
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        shell: powershell
-        run: |
-          .\.sonar\scanner\dotnet-sonarscanner begin /k:"Axelpieterman_s3-proj" /o:"axelpieterman" /d:sonar.login="${{ secrets.SONAR_TOKEN }}" /d:sonar.host.url="https://sonarcloud.io"
-          dotnet build s3-proj.sln
-          .\.sonar\scanner\dotnet-sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}"
-
+    - name: Set up JDK 11
+      uses: actions/setup-java@v1
+      with:
+        java-version: 1.11
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+    - name: Cache SonarCloud packages
+      uses: actions/cache@v1
+      with:
+        path: ~\sonar\cache
+        key: ${{ runner.os }}-sonar
+        restore-keys: ${{ runner.os }}-sonar
+    - name: Cache SonarCloud scanner
+      id: cache-sonar-scanner
+      uses: actions/cache@v1
+      with:
+        path: .\.sonar\scanner
+        key: ${{ runner.os }}-sonar-scanner
+        restore-keys: ${{ runner.os }}-sonar-scanner
+    - name: Install SonarCloud scanner
+      if: steps.cache-sonar-scanner.outputs.cache-hit != 'true'
+      shell: powershell
+      run: |
+        New-Item -Path .\.sonar\scanner -ItemType Directory
+        dotnet tool update dotnet-sonarscanner --tool-path .\.sonar\scanner
+    - name: Build and analyze
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      shell: powershell
+      run: |
+        .\.sonar\scanner\dotnet-sonarscanner begin /k:"Maxximus007_s3-proj" /o:"maxximus007" /d:sonar.login="${{ secrets.SONAR_TOKEN }}" /d:sonar.host.url="https://sonarcloud.io"
+        dotnet build s3-proj.sln
+        .\.sonar\scanner\dotnet-sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}"
   Newman:
+    needs: docker
     runs-on: ubuntu-latest
-
     steps:
+    - name: Docker image start
+      run: docker run -p 5000:5000 -d --name api ${{ secrets.DOCKER_USERNAME }}/s3-proj:latest
+    - name: Start Docker for MSSSql
+      run: docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=Gunnoe123' -e 'MSSQL_PID=Developer' -p 1450:1433 --name mssql -d mcr.microsoft.com/mssql/server:2019-latest
+    - name: Dump mssql docker logs after tests
+      run: docker logs mssql
+    - name: install ef tool
+      run: dotnet tool install --global dotnet-ef
+#    - name: Run migrations
+#      run: dotnet ef database update --project s3-proj 20211019124157_InitialDB.cs
+    - name: Check running containers
+      run: |
+        docker ps -a
+    - name: Sleep to give containers time to deploy
+      uses: juliangruber/sleep-action@v1
+      with:
+        time: 10s
     - name: Newman Action
       uses: matt-ball/newman-action@v1.0.4
       with: 
         collection: https://raw.githubusercontent.com/Axelpieterman/s3-proj/main/tests/Article.postman_collection.json
         environment: https://raw.githubusercontent.com/Axelpieterman/s3-proj/main/tests/Gunnoe-env.json
-        delayRequest: 5000
-
+        delayRequest: 10000
 
       
